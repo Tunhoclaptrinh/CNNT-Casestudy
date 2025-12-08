@@ -120,6 +120,48 @@ class OrderService extends BaseService {
 
     return { success: true };
   }
+  async create(data) {
+    // 1. Validate
+    const validation = await this.validateCreate(data);
+    if (!validation.success) return validation;
+
+    const transformed = await this.beforeCreate(data);
+    
+    // --- BẮT ĐẦU LOGIC TEST RACE CONDITION ---
+    const productId = transformed.items[0].productId;
+    const quantityObj = transformed.items[0].quantity;
+
+    // A. Đọc tồn kho
+    const product = await db.findById('products', productId);
+    
+    if (product.stock < quantityObj) {
+        return {
+            success: false,
+            message: 'Hết hàng! (Out of Stock)',
+            statusCode: 400
+        };
+    }
+
+    // B. Giả lập độ trễ 2 giây (Cửa sổ cho Race Condition)
+    console.log(`[Processing] Order checking stock: ${product.stock}`);
+    await new Promise(resolve => setTimeout(resolve, 2000)); 
+
+    // C. Trừ tồn kho
+    await db.update('products', productId, {
+        stock: product.stock - quantityObj
+    });
+    // --- KẾT THÚC LOGIC TEST ---
+
+    // Tạo đơn hàng
+    const order = await db.create('orders', transformed);
+    await this.afterCreate(order);
+
+    return {
+      success: true,
+      message: 'Order created successfully',
+      data: order
+    };
+  }
 
   /**
    * Transform data trước khi create

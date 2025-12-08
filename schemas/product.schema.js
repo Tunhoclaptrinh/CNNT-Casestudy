@@ -49,5 +49,12 @@ module.exports = {
     max: 100,
     default: 0,
     description: 'Discount percentage'
+  },
+  stock: {
+    type: 'number',
+    required: false,
+    default: 1,
+    min: 0,
+    description: 'Số lượng tồn kho'
   }
 };

@@ -7,13 +7,13 @@ module.exports = {
   },
   subtotal: {
     type: 'number',
-    required: true,
+    required: false,
     min: 0,
     description: 'Subtotal amount'
   },
   deliveryFee: {
     type: 'number',
-    required: true,
+    required: false,
     min: 0,
     description: 'Delivery fee'
   },
@@ -26,7 +26,7 @@ module.exports = {
   },
   total: {
     type: 'number',
-    required: true,
+    required: false,
     min: 0,
     description: 'Total amount',
     custom: (value, data) => {
