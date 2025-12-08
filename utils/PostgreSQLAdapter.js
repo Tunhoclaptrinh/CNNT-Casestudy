@@ -7,7 +7,7 @@ class PostgreSQLAdapter {
     this.pool = null;
     this.schemas = {};
 
-    // Relation mapping (giống MongoAdapter)
+    // Relation mapping
     this.relations = {
       restaurants: {
         products: { ref: 'products', localField: 'id', foreignField: 'restaurant_id' },
@@ -46,7 +46,7 @@ class PostgreSQLAdapter {
       await this.createTables();
     } catch (error) {
       console.error('❌ PostgreSQL Connection Error:', error);
-      throw error;
+      // Không throw error để app không crash, chỉ log lỗi
     }
   }
 
@@ -174,7 +174,10 @@ class PostgreSQLAdapter {
           cancelled_by INTEGER,
           cancel_reason TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          payment_data JSONB,
+          refund_data JSONB,
+          admin_note TEXT
         )
       `);
 
@@ -314,9 +317,12 @@ class PostgreSQLAdapter {
       // Convert snake_case to camelCase
       const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 
-      // Recursively convert nested objects, but not JSONB fields
+      // Recursively convert nested objects, but not JSONB fields or Dates
       if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
-        camelObj[camelKey] = this.toCamelCase(value);
+        // Đối với dữ liệu từ JSONB, nó đã là object JS, không cần convert key
+        // Trừ khi bạn muốn camelCase hóa cả nội dung JSON
+        // Ở đây giữ nguyên nội dung JSON
+        camelObj[camelKey] = value; 
       } else {
         camelObj[camelKey] = value;
       }
@@ -325,7 +331,7 @@ class PostgreSQLAdapter {
   }
 
   /**
-   * Convert camelCase to snake_case (FIXED)
+   * Convert camelCase to snake_case
    */
   toSnakeCase(obj) {
     if (!obj || typeof obj !== 'object') return obj;
@@ -336,15 +342,8 @@ class PostgreSQLAdapter {
       // Convert camelCase to snake_case
       const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 
-      // Don't convert JSONB fields (items, payment_data, etc.)
-      if (key === 'items' || key === 'paymentData' || value instanceof Date) {
-        snakeObj[snakeKey] = value;
-      } else if (value && typeof value === 'object' && !Array.isArray(value)) {
-        // Only convert if it's a plain object, not Date or Buffer
-        snakeObj[snakeKey] = this.toSnakeCase(value);
-      } else {
-        snakeObj[snakeKey] = value;
-      }
+      // Don't recursive convert JSON fields content
+      snakeObj[snakeKey] = value;
     }
     return snakeObj;
   }
@@ -361,7 +360,7 @@ class PostgreSQLAdapter {
       const params = [];
       let paramCount = 1;
 
-      // Apply filters (FIXED: Better handling for null filter)
+      // Apply filters
       if (filter) {
         for (const [key, value] of Object.entries(filter)) {
           // Handle operators
@@ -392,7 +391,7 @@ class PostgreSQLAdapter {
             params.push(values);
             paramCount++;
           } else {
-            // Regular filter - convert camelCase to snake_case
+            // Regular filter
             const snakeKey = this.camelToSnake(key);
             query += ` AND ${snakeKey} = $${paramCount}`;
             params.push(value);
@@ -408,12 +407,12 @@ class PostgreSQLAdapter {
         paramCount++;
       }
 
-      // Count total (before pagination)
+      // Count total
       const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
       const countResult = await client.query(countQuery, params);
       const total = parseInt(countResult.rows[0].count);
 
-      // Sorting (FIXED: Convert field names)
+      // Sorting
       if (sort) {
         const sortFields = sort.split(',');
         const orders = order.split(',');
@@ -468,7 +467,6 @@ class PostgreSQLAdapter {
     }
   }
 
-  // ==================== FIND BY ID ====================
   async findById(collection, id) {
     const client = await this.pool.connect();
     try {
@@ -482,7 +480,6 @@ class PostgreSQLAdapter {
     }
   }
 
-  // ==================== FIND ONE ====================
   async findOne(collection, query) {
     const client = await this.pool.connect();
     try {
@@ -534,7 +531,15 @@ class PostgreSQLAdapter {
       delete snakeData.id; // Let PostgreSQL auto-generate
 
       const keys = Object.keys(snakeData);
-      const values = Object.values(snakeData);
+      
+      // FIX: Stringify object/array values for JSONB columns
+      const values = Object.values(snakeData).map(val => {
+        if (val && typeof val === 'object' && !(val instanceof Date)) {
+          return JSON.stringify(val);
+        }
+        return val;
+      });
+
       const placeholders = keys.map((_, idx) => `$${idx + 1}`);
 
       const sql = `
@@ -557,11 +562,19 @@ class PostgreSQLAdapter {
     const client = await this.pool.connect();
     try {
       const snakeData = this.toSnakeCase(data);
-      delete snakeData.id; // Don't update ID
+      delete snakeData.id; 
       snakeData.updated_at = new Date();
 
       const keys = Object.keys(snakeData);
-      const values = Object.values(snakeData);
+      
+      // FIX: Stringify object/array values for JSONB columns
+      const values = Object.values(snakeData).map(val => {
+        if (val && typeof val === 'object' && !(val instanceof Date)) {
+          return JSON.stringify(val);
+        }
+        return val;
+      });
+
       const setClauses = keys.map((key, idx) => `${key} = $${idx + 1}`);
 
       const sql = `
@@ -607,20 +620,14 @@ class PostgreSQLAdapter {
     }
   }
 
-  // ==================== HELPER METHODS ====================
-
-  /**
-   * Convert single field from camelCase to snake_case
-   */
-  camelToSnake(str) {
-    return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+  async close() {
+    await this.pool.end();
   }
 
-  /**
-   * Convert single field from snake_case to camelCase
-   */
-  snakeToCamel(str) {
-    return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+  // ==================== HELPER METHODS ====================
+
+  camelToSnake(str) {
+    return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
   }
 
   async applyRelations(items, collection, options) {
@@ -638,7 +645,6 @@ class PostgreSQLAdapter {
 
           if (idsToFetch.length > 0) {
             const targetTable = relation + 's';
-            // Postgres dùng $1, $2...
             const placeholders = idsToFetch.map((_, i) => `$${i + 1}`).join(',');
             const res = await client.query(`SELECT * FROM ${targetTable} WHERE id IN (${placeholders})`, idsToFetch);
 
@@ -739,11 +745,7 @@ class PostgreSQLAdapter {
   }
 
   saveData() {
-    return true; // No-op for PostgreSQL
-  }
-
-  async close() {
-    await this.pool.end();
+    return true; 
   }
 }
 
