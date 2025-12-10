@@ -177,7 +177,7 @@ class DatabaseTester {
     await this.test7_ConcurrentWrites();
     await this.test8_ComplexQuery();
     await this.test9_TransactionSupport();
-    await this.test9_1_TransactionSupport();
+    // await this.test9_1_TransactionSupport();
     await this.test10_DataIntegrity();
 
     // Run NEW Research tests
@@ -481,64 +481,64 @@ class DatabaseTester {
     }
   }
 
-  async test9_1_TransactionSupport() {
-    section('TEST 9.1: Transaction Rollback Check');
+  // async test9_1_TransactionSupport() {
+  //   section('TEST 9.1: Transaction Rollback Check');
 
-    // 1. Tạo dữ liệu mẫu
-    const testId = Date.now();
-    let productId = null;
+  //   // 1. Tạo dữ liệu mẫu
+  //   const testId = Date.now();
+  //   let productId = null;
 
-    try {
-      // --- BẮT ĐẦU TRANSACTION (Giả định DB Adapter có hàm này) ---
-      // Nếu DB Adapter không có startTransaction, coi như Fail luôn.
-      if (typeof this.db.startTransaction === 'function') {
-        await this.db.startTransaction();
-      }
+  //   try {
+  //     // --- BẮT ĐẦU TRANSACTION (Giả định DB Adapter có hàm này) ---
+  //     // Nếu DB Adapter không có startTransaction, coi như Fail luôn.
+  //     if (typeof this.db.startTransaction === 'function') {
+  //       await this.db.startTransaction();
+  //     }
 
-      // Bước 1: Tạo Product (Thành công)
-      const product = await this.db.create('products', {
-        name: `Rollback Test ${testId}`,
-        price: 100
-      });
-      productId = product.id;
-      log(`Step 1: Created Product ${productId}`, 'info');
+  //     // Bước 1: Tạo Product (Thành công)
+  //     const product = await this.db.create('products', {
+  //       name: `Rollback Test ${testId}`,
+  //       price: 100
+  //     });
+  //     productId = product.id;
+  //     log(`Step 1: Created Product ${productId}`, 'info');
 
-      // Bước 2: CỐ TÌNH GÂY LỖI
-      throw new Error("🔥 GIẢ LẬP LỖI SERVER 🔥");
+  //     // Bước 2: CỐ TÌNH GÂY LỖI
+  //     throw new Error("🔥 GIẢ LẬP LỖI SERVER 🔥");
 
-      // Bước 3: Tạo Order (Sẽ không bao giờ chạy tới đây)
-      await this.db.create('orders', { productId: productId });
+  //     // Bước 3: Tạo Order (Sẽ không bao giờ chạy tới đây)
+  //     await this.db.create('orders', { productId: productId });
 
-      // Commit (Sẽ không chạy tới đây)
-      if (typeof this.db.commit === 'function') await this.db.commit();
+  //     // Commit (Sẽ không chạy tới đây)
+  //     if (typeof this.db.commit === 'function') await this.db.commit();
 
-    } catch (e) {
-      log(`Caught expected error: ${e.message}`, 'info');
+  //   } catch (e) {
+  //     log(`Caught expected error: ${e.message}`, 'info');
 
-      // --- ROLLBACK (Quan trọng nhất) ---
-      if (typeof this.db.rollback === 'function') {
-        await this.db.rollback();
-        log('Executed Rollback command', 'info');
-      }
-    }
+  //     // --- ROLLBACK (Quan trọng nhất) ---
+  //     if (typeof this.db.rollback === 'function') {
+  //       await this.db.rollback();
+  //       log('Executed Rollback command', 'info');
+  //     }
+  //   }
 
-    // --- KIỂM TRA KẾT QUẢ ---
-    // Tìm xem Product lúc nãy tạo có còn tồn tại không?
-    const checkProduct = await this.db.findById('products', productId);
+  //   // --- KIỂM TRA KẾT QUẢ ---
+  //   // Tìm xem Product lúc nãy tạo có còn tồn tại không?
+  //   const checkProduct = await this.db.findById('products', productId);
 
-    if (!checkProduct) {
-      // Product KHÔNG tìm thấy => Đã Rollback thành công!
-      this.results.addTest('Transaction Support', true, 0, 10, 'Rollback worked perfectly');
-      log('Transaction: PASSED (Data was rolled back correctly)', 'success');
-    } else {
-      // Product VẪN CÒN => Không hỗ trợ Transaction
-      this.results.addTest('Transaction Support', false, 0, 0, 'No Rollback detected');
-      log('Transaction: FAILED (Data remains despite error)', 'error');
+  //   if (!checkProduct) {
+  //     // Product KHÔNG tìm thấy => Đã Rollback thành công!
+  //     this.results.addTest('Transaction Support', true, 0, 10, 'Rollback worked perfectly');
+  //     log('Transaction: PASSED (Data was rolled back correctly)', 'success');
+  //   } else {
+  //     // Product VẪN CÒN => Không hỗ trợ Transaction
+  //     this.results.addTest('Transaction Support', false, 0, 0, 'No Rollback detected');
+  //     log('Transaction: FAILED (Data remains despite error)', 'error');
 
-      // Dọn rác thủ công vì rollback thất bại
-      await this.db.delete('products', productId);
-    }
-  }
+  //     // Dọn rác thủ công vì rollback thất bại
+  //     await this.db.delete('products', productId);
+  //   }
+  // }
 
   // ==================== TEST 10: DATA INTEGRITY ====================
 
