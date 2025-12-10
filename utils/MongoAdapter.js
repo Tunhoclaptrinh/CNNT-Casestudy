@@ -30,7 +30,7 @@ class MongoAdapter {
   async initConnection() {
     if (mongoose.connection.readyState === 0) {
       try {
-        await mongoose.connect(process.env.DATABASE_URL);
+        await mongoose.connect(process.env.MONGO_URI || process.env.DATABASE_URL);
         console.log('🔌 MongoDB Adapter Connected');
       } catch (error) {
         console.error('❌ MongoDB Connection Error:', error);

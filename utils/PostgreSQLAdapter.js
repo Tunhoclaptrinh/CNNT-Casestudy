@@ -33,7 +33,7 @@ class PostgreSQLAdapter {
   async initConnection() {
     try {
       this.pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
+        connectionString: process.env.POSTGRES_URI || process.env.DATABASE_URL,
         ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
       });
 
@@ -322,7 +322,7 @@ class PostgreSQLAdapter {
         // Đối với dữ liệu từ JSONB, nó đã là object JS, không cần convert key
         // Trừ khi bạn muốn camelCase hóa cả nội dung JSON
         // Ở đây giữ nguyên nội dung JSON
-        camelObj[camelKey] = value; 
+        camelObj[camelKey] = value;
       } else {
         camelObj[camelKey] = value;
       }
@@ -531,7 +531,7 @@ class PostgreSQLAdapter {
       delete snakeData.id; // Let PostgreSQL auto-generate
 
       const keys = Object.keys(snakeData);
-      
+
       // FIX: Stringify object/array values for JSONB columns
       const values = Object.values(snakeData).map(val => {
         if (val && typeof val === 'object' && !(val instanceof Date)) {
@@ -562,11 +562,11 @@ class PostgreSQLAdapter {
     const client = await this.pool.connect();
     try {
       const snakeData = this.toSnakeCase(data);
-      delete snakeData.id; 
+      delete snakeData.id;
       snakeData.updated_at = new Date();
 
       const keys = Object.keys(snakeData);
-      
+
       // FIX: Stringify object/array values for JSONB columns
       const values = Object.values(snakeData).map(val => {
         if (val && typeof val === 'object' && !(val instanceof Date)) {
@@ -745,7 +745,7 @@ class PostgreSQLAdapter {
   }
 
   saveData() {
-    return true; 
+    return true;
   }
 }
 
