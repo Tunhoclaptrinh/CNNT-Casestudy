@@ -5,12 +5,19 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "seed": "node utils/seedData.js",
     "dev": "nodemon server.js",
-    "test:upload": "node tests/upload.test.js",
-    "query": "node tools/run-query.js",
+    "seed": "node utils/seedData.js",
     "fix-sequences": "node tools/fix-sequences.js",
-    "test:database": "node tests/test-db-comparison.js"
+    "// --- TOOLS (CÔNG CỤ) ---": "",
+    "tool:sql": "node tools/exec-raw-sql-cli.js",
+    "tool:mongo": "node tools/helper-mongo-native.js",
+    "seed:50k": "node tools/seed-50k-users.js",
+    "// --- BENCHMARKS & TESTS ---": "",
+    "test:database": "node tests/test-db-comparison.js",
+    "bench:cross-db": "node tests/benchmark-cross-db-performance.js",
+    "bench:json-rel": "node tests/benchmark-json-vs-relational.js",
+    "demo:native": "node tests/demo-native-speed-gain.js",
+    "analyze:adapter": "node tests/analysis-adapter-vs-native.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
