@@ -183,38 +183,64 @@ class MongoAdapter {
         sortObj[field] = order;
       });
 
-      queryBuilder = queryBuilder.sort(sortObj);
+      queryBuilder = queryBuilder.sort({ [options.sort]: options.order === 'desc' ? -1 : 1 });
     } else {
       queryBuilder = queryBuilder.sort({ createdAt: -1 });
     }
+    // Populate & Quyết định dùng lean() hay không
+    let useLean = true; // Mặc định dùng lean cho nhanh
+
+    const addPopulate = (str) => {
+      str.split(',').forEach(field => {
+        if (field && field !== 'items') {
+          try {
+            queryBuilder.populate(field);
+            useLean = false; // Có populate thì KHÔNG dùng lean nữa
+          } catch (e) { }
+        }
+      });
+    };
+
+    if (options.embed) addPopulate(options.embed);
+    if (options.expand) addPopulate(options.expand);
 
     // Populate relations
-    if (options.embed) {
-      const embedFields = options.embed.split(',');
-      embedFields.forEach(field => {
-        if (field !== 'items') {
-          try {
-            queryBuilder = queryBuilder.populate(field);
-          } catch (e) {
-            console.log(`Skip populate ${field}:`, e.message);
-          }
-        }
-      });
-    }
+    // if (options.embed) {
+    //   const embedFields = options.embed.split(',');
+    //   embedFields.forEach(field => {
+    //     if (field !== 'items') {
+    //       try {
+    //         queryBuilder = queryBuilder.populate(field);
+    //       } catch (e) {
+    //         console.log(`Skip populate ${field}:`, e.message);
+    //       }
+    //     }
+    //   });
+    // }
 
-    if (options.expand) {
-      const expandFields = options.expand.split(',');
-      expandFields.forEach(field => {
-        try {
-          queryBuilder = queryBuilder.populate(field);
-        } catch (e) {
-          console.log(`Skip populate ${field}:`, e.message);
-        }
-      });
-    }
+    // if (options.expand) {
+    //   const expandFields = options.expand.split(',');
+    //   expandFields.forEach(field => {
+    //     try {
+    //       queryBuilder = queryBuilder.populate(field);
+    //     } catch (e) {
+    //       console.log(`Skip populate ${field}:`, e.message);
+    //     }
+    //   });
+    // }
 
     // Execute query
-    const data = await queryBuilder.skip(skip).limit(limit).lean();
+    // const data = await queryBuilder.skip(skip).limit(limit).lean();
+
+    let data;
+    if (useLean) {
+      data = await queryBuilder.skip(skip).limit(limit).lean();
+    } else {
+      // Nếu không dùng lean, phải convert toObject để lấy virtuals
+      const docs = await queryBuilder.skip(skip).limit(limit).exec();
+      data = docs.map(d => d.toObject({ virtuals: true }));
+    }
+
     const total = await Model.countDocuments(query);
 
     // Map _id -> id cho tất cả items
@@ -289,9 +315,10 @@ class MongoAdapter {
 
     // Tự sinh ID số ngẫu nhiên nếu chưa có
     if (!data._id && !data.id) {
-      data._id = Date.now() + Math.floor(Math.random() * 1000);
+      const hrTime = process.hrtime();
+      // Kết hợp giây + nano giây + số ngẫu nhiên
+      data._id = Number(hrTime[0].toString() + hrTime[1].toString().substring(0, 6) + Math.floor(Math.random() * 100));
     } else if (data.id && !data._id) {
-      // Nếu có id thì dùng id làm _id
       data._id = data.id;
     }
 
