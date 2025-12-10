@@ -42,7 +42,7 @@ class MySQLAdapter {
       const connectionString = process.env.MYSQL_URI || process.env.DATABASE_URL;
 
       if (connectionString) {
-        const url = new URL(process.env.DATABASE_URL);
+        const url = new URL(connectionString);
         config = {
           host: url.hostname,
           port: url.port || 3306,

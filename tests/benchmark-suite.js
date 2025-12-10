@@ -105,8 +105,18 @@ async function runTestForDB(name, adapter, suffix) {
   stats['Join (50 rows)'] = res4.time === -1 ? 'ERROR' : `${res4.time}ms`;
 
   // Đóng kết nối
-  if (adapter.pool && adapter.pool.end) await adapter.pool.end(); // PG/MySQL
-  if (adapter.close) await adapter.close(); // Mongo Wrapper
+  try {
+    // Chỉ gọi hàm close() của Adapter nếu có, nó sẽ tự xử lý việc đóng pool
+    if (adapter.close) {
+      await adapter.close();
+    }
+    // Fallback: Nếu không có hàm close thì mới tự đóng pool (dành cho PG/MySQL nếu thiếu hàm close)
+    else if (adapter.pool && typeof adapter.pool.end === 'function') {
+      await adapter.pool.end();
+    }
+  } catch (e) {
+    // Bỏ qua lỗi đóng kết nối để không làm hỏng bảng kết quả
+  }
 
   return stats;
 }
