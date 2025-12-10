@@ -9,6 +9,8 @@ async function testSchemaFlexibility() {
     name: "Bánh Tráng Trộn Special",
     price: 20000,
     description: "Ngon xoắn lưỡi",
+    restaurantId: 1,
+    categoryId: 1,
     // Đây là trường mới chưa từng có trong DB
     isHotSale: true,
     metaData: { origin: "Sai Gon", spicyLevel: 5 }

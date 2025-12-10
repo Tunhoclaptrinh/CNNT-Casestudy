@@ -5,7 +5,7 @@ const { MongoClient } = require('mongodb');
 const HO_GUOM = [105.852174, 21.028511];
 
 async function testGeo() {
-  console.log("=== TEST 3: GEOSPATIAL QUERY (TÌM SHIPPER GẦN HỒ GƯƠM) ===");
+  console.log("=== TEST 7: GEOSPATIAL QUERY (TÌM SHIPPER GẦN HỒ GƯƠM) ===");
 
   // Setup MongoDB Native
   const client = new MongoClient(process.env.DATABASE_URL);

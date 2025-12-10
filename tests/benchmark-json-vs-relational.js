@@ -163,7 +163,7 @@ async function runBenchmarkSuite() {
         "MySQL JSON": `${toMB(results.mysql_json.size)} MB`,
         "MySQL Relational": `${toMB(results.mysql_rel.size)} MB`,
         "MongoDB": `${toMB(results.mongo.size)} MB`,
-        "Đánh giá": "Relational tiết kiệm nhất"
+        "Đánh giá": "Relational tiết kiệm nhất (SQL)"
       }
     ]);
 
