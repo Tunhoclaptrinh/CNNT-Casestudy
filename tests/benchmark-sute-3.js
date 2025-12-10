@@ -1,210 +1,138 @@
 /**
- * FILE: tests/test-comparison-native.js
- * MỤC TIÊU: Benchmark so sánh 3 DB (Dùng Connection String - URI cho tiện lợi)
+ * FILE: tests/benchmark-sute-3.js (FIXED COLLSTATS)
+ * FIX: Thay mongoCol.stats() bằng mongoDb.command({ collStats: ... })
  */
+require('dotenv').config();
 
-const mysql = require('mysql2/promise');
 const { MongoClient } = require('mongodb');
+const mysqlAdapter = require('../utils/MySQLAdapter');
 
-// ==============================================================================
-// 1. CẤU HÌNH (DÙNG URI CHO TIỆN)
-// ==============================================================================
-const CONFIG = {
-  records: 50000,
-  targetItem: 'Cơm Tấm Sườn Bì',
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/cnnt_benchmark_uri';
+const RECORDS = 50000;
+const TARGET_ITEM = 'Cơm Tấm Sườn Bì';
 
-  // QUAN TRỌNG: Thay 'localhost' bằng '127.0.0.1'
-  mysqlUri: process.env.MYSQL_URI || 'mysql://root:@127.0.0.1:3306/cnnt_benchmark_uri',
-
-  // MongoDB thường thông minh hơn nên localhost vẫn ok, nhưng sửa luôn cho chắc
-  mongoUri: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/cnnt_benchmark_uri'
-};
-
-// ==============================================================================
-// 2. HÀM TIỆN ÍCH (HELPER)
-// ==============================================================================
-
-// Hàm parse URI của MySQL ra thành object config
-function parseMysqlUri(uri) {
-  try {
-    const url = new URL(uri); // Dùng class URL chuẩn của JS
-    return {
-      host: url.hostname || 'localhost',
-      port: url.port || 3306,
-      user: url.username || 'root',
-      password: url.password || '', // Mặc định rỗng nếu không có
-      database: url.pathname.replace(/^\//, '') || 'test_db' // Bỏ dấu / ở đầu
-    };
-  } catch (e) {
-    console.error("❌ Lỗi format MySQL URI:", e.message);
-    console.error("👉 Ví dụ đúng: mysql://root:123456@localhost:3306/my_db");
-    process.exit(1);
-  }
-}
-
-// Hàm đo thời gian
-async function measure(label, fn) {
-  const start = process.hrtime();
-  try {
-    await fn();
-  } catch (err) {
-    console.error(`❌ [Lỗi tại ${label}]`, err.message);
-    return -1;
-  }
-  const end = process.hrtime(start);
-  return (end[0] * 1000 + end[1] / 1e6).toFixed(2);
-}
-
-const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
-
-// ==============================================================================
-// 3. MAIN SCRIPT
-// ==============================================================================
 async function runBenchmarkSuite() {
-  // Parse config từ URI
-  const mysqlConfig = parseMysqlUri(CONFIG.mysqlUri);
+  console.log(`\n🚀 BẮT ĐẦU BENCHMARK (${RECORDS.toLocaleString()} records)`);
+  console.log(`-------------------------------------------------------------`);
 
-  console.log(`\n🚀 BẮT ĐẦU BENCHMARK SUITE (URI MODE)`);
-  console.log(`   - MySQL: ${mysqlConfig.user}@${mysqlConfig.host}:${mysqlConfig.port}/${mysqlConfig.database}`);
-  console.log(`   - Mongo: ${CONFIG.mongoUri}`);
-  console.log(`   - Records: ${CONFIG.records.toLocaleString()}`);
-  console.log(`==================================================================`);
+  // 1. KẾT NỐI
+  await mysqlAdapter.initConnection();
+  const mysqlPool = mysqlAdapter.pool;
 
-  // 1. KẾT NỐI DATABASE
-  // Kết nối tạm thời không có database để Create DB nếu chưa có
-  const tempConn = await mysql.createConnection({
-    host: mysqlConfig.host,
-    port: mysqlConfig.port,
-    user: mysqlConfig.user,
-    password: mysqlConfig.password
-  });
-  await tempConn.query(`CREATE DATABASE IF NOT EXISTS ${mysqlConfig.database}`);
-  await tempConn.end();
-
-  // Kết nối chính thức vào DB đã tạo
-  const mysqlConn = await mysql.createConnection({
-    host: mysqlConfig.host,
-    port: mysqlConfig.port,
-    user: mysqlConfig.user,
-    password: mysqlConfig.password,
-    database: mysqlConfig.database
-  });
-
-  // Kết nối MongoDB (Driver Mongo tự parse URI nên không cần làm gì thêm)
-  const mongoClient = new MongoClient(CONFIG.mongoUri);
+  const mongoClient = new MongoClient(MONGO_URI);
   await mongoClient.connect();
-  // Lấy tên DB từ URI Mongo hoặc dùng mặc định
-  const mongoDbName = new URL(CONFIG.mongoUri).pathname.replace(/^\//, '') || 'cnnt_benchmark_uri';
-  const mongoDb = mongoClient.db(mongoDbName);
+  const mongoDb = mongoClient.db();
 
-  const results = {
-    mysql_json: { name: 'MySQL (Current JSON)' },
-    mysql_rel: { name: 'MySQL (Normalized)' },
-    mongo: { name: 'MongoDB (Native)' }
+  const measure = async (label, fn) => {
+    const start = process.hrtime();
+    try {
+      await fn();
+    } catch (e) {
+      console.error(`❌ Lỗi tại ${label}:`, e.message);
+      return -1;
+    }
+    const end = process.hrtime(start);
+    return (end[0] * 1000 + end[1] / 1e6).toFixed(2);
   };
 
+  const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
+
   try {
-    // --- BƯỚC 1: SETUP SCHEMA ---
     console.log("🛠  Đang khởi tạo Schema...");
 
-    // A. MySQL JSON
-    await mysqlConn.query("DROP TABLE IF EXISTS orders_json");
-    await mysqlConn.query(`
-            CREATE TABLE orders_json (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                items JSON,
-                total INT
-            ) ENGINE=InnoDB
-        `);
+    // A. MySQL
+    await mysqlPool.query("DROP TABLE IF EXISTS bench_orders_json");
+    await mysqlPool.query(`CREATE TABLE bench_orders_json (id INT AUTO_INCREMENT PRIMARY KEY, items JSON, total INT)`);
 
-    // B. MySQL Normalized
-    await mysqlConn.query("DROP TABLE IF EXISTS order_items");
-    await mysqlConn.query("DROP TABLE IF EXISTS orders_rel");
-    await mysqlConn.query(`CREATE TABLE orders_rel (id INT AUTO_INCREMENT PRIMARY KEY, total INT) ENGINE=InnoDB`);
-    await mysqlConn.query(`
-            CREATE TABLE order_items (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                order_id INT,
+    await mysqlPool.query("DROP TABLE IF EXISTS bench_order_items");
+    await mysqlPool.query("DROP TABLE IF EXISTS bench_orders_rel");
+    await mysqlPool.query(`CREATE TABLE bench_orders_rel (id INT AUTO_INCREMENT PRIMARY KEY, total INT)`);
+    await mysqlPool.query(`
+            CREATE TABLE bench_order_items (
+                id INT AUTO_INCREMENT PRIMARY KEY, 
+                order_id INT, 
                 product_name VARCHAR(255), 
-                quantity INT,
-                price INT,
-                INDEX idx_product (product_name), 
-                FOREIGN KEY (order_id) REFERENCES orders_rel(id)
-            ) ENGINE=InnoDB
+                quantity INT, price INT, 
+                INDEX idx_bench_product (product_name)
+            )
         `);
 
-    // C. MongoDB
-    await mongoDb.collection('orders').drop().catch(() => { });
-    await mongoDb.collection('orders').createIndex({ "items.productName": 1 });
+    // B. Mongo
+    const mongoCol = mongoDb.collection('bench_orders');
+    await mongoCol.drop().catch(() => { });
+    await mongoCol.createIndex({ "items.productName": 1 });
 
-    // --- BƯỚC 2: SEED DATA ---
-    console.log(`🌱 Đang sinh ${CONFIG.records.toLocaleString()} bản ghi mẫu...`);
-
+    // --- SEED DATA ---
+    console.log(`🌱 Đang sinh ${RECORDS.toLocaleString()} bản ghi mẫu...`);
     const batchSize = 2000;
-    for (let i = 0; i < CONFIG.records; i += batchSize) {
-      const sqlJsonBatch = [];
+
+    for (let i = 0; i < RECORDS; i += batchSize) {
+      const sqlJson = [];
       const sqlRelItems = [];
-      const mongoBatch = [];
+      const mongoDocs = [];
 
       for (let j = 0; j < batchSize; j++) {
         const isTarget = Math.random() < 0.2;
-        const itemsData = [
-          { productId: 101, productName: isTarget ? CONFIG.targetItem : 'Bún Bò', quantity: 2, price: 45000 },
-          { productId: 102, productName: 'Trà Đá', quantity: 1, price: 5000 }
+        const items = [
+          { productName: isTarget ? TARGET_ITEM : 'Phở Bò', quantity: 2, price: 45000 },
+          { productName: 'Trà Đá', quantity: 1, price: 5000 }
         ];
-        const total = 50000;
 
-        sqlJsonBatch.push([JSON.stringify(itemsData), total]);
-        mongoBatch.push({ items: itemsData, total: total });
+        sqlJson.push([JSON.stringify(items), 50000]);
+        mongoDocs.push({ items, total: 50000 });
 
         const orderId = i + j + 1;
-        itemsData.forEach(item => {
+        items.forEach(item => {
           sqlRelItems.push([orderId, item.productName, item.quantity, item.price]);
         });
       }
 
-      if (sqlJsonBatch.length) await mysqlConn.query('INSERT INTO orders_json (items, total) VALUES ?', [sqlJsonBatch]);
-      if (mongoBatch.length) await mongoDb.collection('orders').insertMany(mongoBatch);
-      if (sqlRelItems.length) await mysqlConn.query('INSERT INTO order_items (order_id, product_name, quantity, price) VALUES ?', [sqlRelItems]);
+      if (sqlJson.length) await mysqlPool.query('INSERT INTO bench_orders_json (items, total) VALUES ?', [sqlJson]);
+      if (sqlRelItems.length) await mysqlPool.query('INSERT INTO bench_order_items (order_id, product_name, quantity, price) VALUES ?', [sqlRelItems]);
+      if (mongoDocs.length) await mongoCol.insertMany(mongoDocs);
     }
+
     console.log("✅ Dữ liệu xong. Bắt đầu đo!\n");
 
-    // --- BƯỚC 3: CHẠY TEST ---
+    const results = { mysql_json: {}, mysql_rel: {}, mongo: {} };
 
     // 1. READ
-    console.log("🔍 TEST 1: READ (Tìm món ăn)");
-    results.mysql_json.read = await measure('MySQL JSON Read', async () => {
-      await mysqlConn.query(`SELECT COUNT(*) FROM orders_json WHERE JSON_SEARCH(items, 'one', '%${CONFIG.targetItem}%') IS NOT NULL`);
+    console.log("🔍 TEST 1: READ (Tìm kiếm)");
+    results.mysql_json.read = await measure('MySQL JSON', async () => {
+      await mysqlPool.query(`SELECT COUNT(*) FROM bench_orders_json WHERE JSON_SEARCH(items, 'one', '%${TARGET_ITEM}%') IS NOT NULL`);
     });
-    results.mysql_rel.read = await measure('MySQL Rel Read', async () => {
-      await mysqlConn.query(`SELECT COUNT(DISTINCT order_id) FROM order_items WHERE product_name = ?`, [CONFIG.targetItem]);
+    results.mysql_rel.read = await measure('MySQL Relational', async () => {
+      await mysqlPool.query(`SELECT COUNT(DISTINCT order_id) FROM bench_order_items WHERE product_name = ?`, [TARGET_ITEM]);
     });
-    results.mongo.read = await measure('Mongo Read', async () => {
-      await mongoDb.collection('orders').countDocuments({ "items.productName": CONFIG.targetItem });
+    results.mongo.read = await measure('MongoDB', async () => {
+      await mongoCol.countDocuments({ "items.productName": TARGET_ITEM });
     });
 
     // 2. WRITE
-    console.log("✏️  TEST 2: WRITE (Cập nhật giá)");
-    results.mysql_json.write = await measure('MySQL JSON Write', async () => {
-      await mysqlConn.query(`UPDATE orders_json SET items = JSON_SET(items, '$[0].price', 0) WHERE JSON_SEARCH(items, 'one', '%${CONFIG.targetItem}%') IS NOT NULL`);
+    console.log("✏️  TEST 2: WRITE (Update giá)");
+    results.mysql_json.write = await measure('MySQL JSON Update', async () => {
+      await mysqlPool.query(`UPDATE bench_orders_json SET items = JSON_SET(items, '$[0].price', 0) WHERE JSON_SEARCH(items, 'one', '%${TARGET_ITEM}%') IS NOT NULL`);
     });
-    results.mysql_rel.write = await measure('MySQL Rel Write', async () => {
-      await mysqlConn.query(`UPDATE order_items SET price = 0 WHERE product_name = ?`, [CONFIG.targetItem]);
+    results.mysql_rel.write = await measure('MySQL Relational Update', async () => {
+      await mysqlPool.query(`UPDATE bench_order_items SET price = 0 WHERE product_name = ?`, [TARGET_ITEM]);
     });
-    results.mongo.write = await measure('Mongo Write', async () => {
-      await mongoDb.collection('orders').updateMany({ "items.productName": CONFIG.targetItem }, { $set: { "items.$.price": 0 } });
+    results.mongo.write = await measure('MongoDB Update', async () => {
+      await mongoCol.updateMany({ "items.productName": TARGET_ITEM }, { $set: { "items.$.price": 0 } });
     });
 
     // 3. STORAGE
     console.log("💾 TEST 3: STORAGE SIZE");
-    const [stJ] = await mysqlConn.query("SHOW TABLE STATUS LIKE 'orders_json'");
+    const [stJ] = await mysqlPool.query("SHOW TABLE STATUS LIKE 'bench_orders_json'");
     results.mysql_json.size = stJ[0].Data_length + stJ[0].Index_length;
-    const [stR] = await mysqlConn.query("SHOW TABLE STATUS LIKE 'order_items'");
+
+    const [stR] = await mysqlPool.query("SHOW TABLE STATUS LIKE 'bench_order_items'");
     results.mysql_rel.size = stR[0].Data_length + stR[0].Index_length;
-    const stM = await mongoDb.collection('orders').stats();
+
+    // --- FIX LỖI TẠI ĐÂY: Dùng mongoDb.command thay vì mongoCol.stats() ---
+    const stM = await mongoDb.command({ collStats: 'bench_orders' });
     results.mongo.size = stM.storageSize;
 
-    // --- BƯỚC 4: ĐÁNH GIÁ ---
+    // --- KẾT QUẢ ---
     console.log("\n==================================================================");
     console.log("📊 KẾT QUẢ SO SÁNH");
     console.log("==================================================================");
@@ -242,7 +170,7 @@ async function runBenchmarkSuite() {
   } catch (err) {
     console.error("Critical Error:", err);
   } finally {
-    await mysqlConn.end();
+    await mysqlAdapter.close();
     await mongoClient.close();
   }
 }
