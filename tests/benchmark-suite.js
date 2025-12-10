@@ -150,6 +150,7 @@ async function runTestForDB(name, adapter, suffix) {
 
   console.log(`\n📊 BẢNG TỔNG SẮP HIỆU NĂNG (Thấp hơn là tốt hơn)`.bold.yellow);
   console.table(results);
+
   console.log(`\n✅ Hoàn tất!`.green);
   process.exit(0);
 })();
