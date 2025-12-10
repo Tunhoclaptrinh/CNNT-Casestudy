@@ -18,6 +18,7 @@ async function run() {
       email: `big_${Date.now()}_${i + idx}@test.com`,
       password: 'pass',
       role: 'customer',
+      phone: '0987654321',
       is_active: true
     }));
 
