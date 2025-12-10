@@ -33,12 +33,16 @@ class MySQLAdapter {
   }
 
   async initConnection() {
+
     try {
       // Parse DATABASE_URL if provided (format: mysql://user:pass@host:port/db)
       let config;
 
-      if (process.env.DATABASE_URL) {
-        const url = new URL(process.env.DATABASE_URL);
+      // Ưu tiên MYSQL_URI trước, sau đó mới đến DATABASE_URL
+      const connectionString = process.env.MYSQL_URI || process.env.DATABASE_URL;
+
+      if (connectionString) {
+        const url = new URL(connectionString);
         config = {
           host: url.hostname,
           port: url.port || 3306,
